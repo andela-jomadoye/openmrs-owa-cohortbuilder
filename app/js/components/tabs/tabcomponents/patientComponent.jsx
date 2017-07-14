@@ -22,7 +22,14 @@ class PatientComponent extends Component {
       selectedAttribute: '',
       gender: 'all',
       minAge: '',
-      maxAge: ''
+      maxAge: '',
+      ageErrorObject: {
+        status: false,
+        minAgeErrorMsg: '',
+        maxAgeErrorMsg: '',
+      },
+      isAgeDisabled: false,
+      isDateDisabled: false
     };
     this.jsonHelper = new JSONHelper();
     this.searchDemographics = this.searchDemographics.bind(this);
@@ -37,6 +44,7 @@ class PatientComponent extends Component {
     this.handleSelectAttribute = this.handleSelectAttribute.bind(this);
     this.handleSelectGender = this.handleSelectGender.bind(this);
     this.handleSelectAge = this.handleSelectAge.bind(this);
+    this.handleAgeValidation = this.handleAgeValidation.bind(this);
   }
 
   componentDidMount(props) {
@@ -49,8 +57,7 @@ class PatientComponent extends Component {
 
   searchDemographics(event) {
     event.preventDefault();
-    const { gender, minAge, maxAge, livingStatus } = this.state;
-    let { startDate, endDate } = this.state;
+    const { gender, minAge, maxAge, startDate, endDate, livingStatus } = this.state;
     const searchParameters = { gender };
     // add appropriate age constraints to the search parameters
     if (minAge || maxAge) {
@@ -72,18 +79,7 @@ class PatientComponent extends Component {
       }
     }
     // add appropriate birthdate constraints to the search parameters
-    if (startDate && endDate) {  
-      // coerce the values of start date and end date to numbers for comparison    
-      let startYear = Number(startDate.split('-')[0]);
-      let endYear = Number(endDate.split('-')[0]);
-
-      // switch the start and end dates if the start year is before the end year
-      if (startYear > endYear) {
-        const startDateStore = startDate;
-        startDate = endDate;
-        endDate = startDateStore;
-      }
-
+    if (startDate && endDate) {
       searchParameters.bornDuringPeriod = [
         { name: 'startDate', dataType: 'date', value: startDate },
         { name: 'endDate', dataType: 'date', value: endDate }
@@ -251,8 +247,99 @@ class PatientComponent extends Component {
     this.setState({ gender: event.target.value });
   }
 
+  /**
+   * This method handles the validation of the user input, it ensure no age below 0
+   * and above 200 can be use to filter the search. 
+   * 
+   * @param {interger} age This is the age the user inputs
+   * @param {string} identifier This is the ID of the age 
+   * @returns 
+   * @memberof PatientComponent
+   */
+  handleAgeValidation(age, identifier) {
+      if (age >= 0 && age <= 200 && typeof(age)==="string" && age !== '-0') {
+        this.setState((previousState) => {
+          previousState.ageErrorObject[`${identifier}ErrorMsg`] = '';
+          return previousState;
+        });
+        return true;
+      } else if(age < 0 || age === '-0' || age === -0) {
+        this.setState((previousState) => {
+          identifier === 'minAge' ?
+          previousState.ageErrorObject.minAgeErrorMsg = 'The age must be greater than 0' : 
+          previousState.ageErrorObject.maxAgeErrorMsg = 'The age must be greater than 0';
+          return previousState;
+        });
+      } else if(age > 200) {
+        this.setState((previousState) => {
+          identifier === 'minAge' ?
+          previousState.ageErrorObject.minAgeErrorMsg = 'The age must be less than 200' :
+          previousState.ageErrorObject.maxAgeErrorMsg = 'The age must be less than 200';
+          return previousState;
+        });
+      }
+      return false;
+  }
+
+  /**
+   * This method validates if a user types a number
+   * @param {object} event 
+   */
+  handleValidateAge(event) {
+    // validate if the user inputs a number
+    const invalidCharacters = [
+      '-',
+      '+',
+      'e'
+    ];
+
+    (invalidCharacters.includes(event.key)) ? event.preventDefault() : false;
+  }
+
+  /**
+   * This method copies the value of the age field for the age HTML and copies
+   * it to the component state.
+   * 
+   * @param {object} event The HTML event
+   * @memberof PatientComponent
+   */
   handleSelectAge(event) {
-    this.setState({ [event.target.id]: event.target.value });
+    // get input from form
+    let minAge = Number(document.getElementById('minAge').value);
+    let maxAge = Number(document.getElementById('maxAge').value);
+    const btn = document.getElementById('search-by-age');
+
+    // disable date fields if age is selected
+    minAge ? this.setState({isDateDisabled: true}) : this.setState({isDateDisabled: false});
+
+    // check if minAge is greater than maxAge and return a message
+    if (minAge > maxAge) {
+      this.setState((previousState) => {
+        previousState.ageErrorObject.minAgeErrorMsg = 'Minimum age should not be greater than maximum age';
+        previousState.ageErrorObject.status = true;
+        return previousState;
+      });
+      return true;
+    } else {
+      this.setState((previousState) => {
+        previousState.ageErrorObject.minAgeErrorMsg = '';
+        previousState.ageErrorObject.status = false;
+        return previousState;
+      });
+    }
+
+    if (this.handleAgeValidation(event.target.value, event.target.id)) {
+      this.setState({ [event.target.id]: event.target.value });
+      this.setState((previousState) => {
+          previousState.ageErrorObject.status = false;
+          return previousState;
+        });
+    } else {
+      this.setState((previousState) => {
+          previousState.ageErrorObject.status = true;
+          return previousState;
+        });
+    }
   }
 
   /**
@@ -337,6 +424,8 @@ class PatientComponent extends Component {
    * @return {String} MM-DD-YY date formatted string
    */
   getDateString(isoString) {
+    // disable age fields if date is selected
+    isoString ? this.setState({isAgeDisabled: true}) : this.setState({isAgeDisabled: false});
     return isoString ? isoString.split('T')[0] : '';
   }
 
@@ -348,7 +437,7 @@ class PatientComponent extends Component {
         </option>
       );
     });
-    const { startDate, endDate, selectedAttribute } = this.state;
+    const { startDate, endDate, selectedAttribute, ageErrorObject } = this.state;
     return (
       <div>
         <h3>Search By Demographic</h3>
@@ -370,12 +459,33 @@ class PatientComponent extends Component {
             <div className="col-sm-1">
               <span className="inline-label">Between:</span>
             </div>
-            <div className="col-sm-3">
-              <input name="minage" id="minAge" className="form-control" onChange={this.handleSelectAge} value={this.minAge} />
+            <div className={ageErrorObject ? "col-sm-3 error" : "col-sm-3"}>
+              <input
+                type="number"
+                name="minage"
+                id="minAge"
+                disabled={this.state.isAgeDisabled}
+                className="form-control"
+                onKeyDown={this.handleValidateAge}
+                onKeyUp={this.handleSelectAge}
+                onFocus={this.handleFocus}
+                value={this.minAge}
+              />
+              <span>{ageErrorObject.status && ageErrorObject.minAgeErrorMsg}</span>
             </div>
             <span className="inline-label">And:</span>
-            <div className="col-sm-3">
-              <input name="maxage" id="maxAge" className="form-control" onChange={this.handleSelectAge} value={this.maxAge} />
+            <div className={ageErrorObject ? "col-sm-3 error" : "col-sm-3"}>
+              <input
+                type="number"
+                name="maxage"
+                id="maxAge"
+                disabled={this.state.isAgeDisabled}
+                className="form-control"
+                onKeyDown={this.handleValidateAge}
+                onKeyUp={this.handleSelectAge}
+                onFocus={this.handleFocus}
+                value={this.maxAge} />
+              <span>{ageErrorObject.status && ageErrorObject.maxAgeErrorMsg}</span>
             </div>
           </div>
           {startDate && !endDate || endDate && !startDate ?
@@ -392,6 +502,7 @@ class PatientComponent extends Component {
               className={`col-sm-3 ${endDate && !startDate ? 'has-error' : ''}`}
             >
               <DatePicker
+                disabled={this.state.isDateDisabled}
                 className="form-control"
                 id="startDate"
                 dateFormat="DD-MM-YYYY"
@@ -404,6 +515,7 @@ class PatientComponent extends Component {
               className={`col-sm-3 ${startDate && !endDate ? 'has-error' : ''}`}
             >
               <DatePicker
+                disabled={this.state.isDateDisabled}
                 className="form-control"
                 id="endDate"
                 dateFormat="DD-MM-YYYY"
@@ -440,7 +552,7 @@ class PatientComponent extends Component {
 
           <div className="form-group">
             <div className="col-sm-offset-2 col-sm-6">
-              <button type="submit" onClick={this.searchDemographics} className="btn btn-success">Search</button>
+              <button type="submit" onClick={this.searchDemographics} className="btn btn-success" disabled={ageErrorObject.status}>Search</button>
               <button onClick={this.resetSearchByDemographics} className="btn btn-default cancelBtn">Reset</button>
             </div>
           </div>
